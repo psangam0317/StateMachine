@@ -1,132 +1,158 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>State Machine Diagram Builder</title>
+  <meta charset="UTF-8" />
+  <title>State Machine Diagram</title>
   <style>
     body {
       margin: 0;
       overflow: hidden;
-      font-family: sans-serif;
     }
     canvas {
       background: #f4f4f4;
       display: block;
     }
-    #labelInput {
-      position: absolute;
-      display: none;
-      background: white;
-      border: 1px solid gray;
-      padding: 4px;
-    }
   </style>
 </head>
 <body>
   <canvas id="canvas"></canvas>
-  <input type="text" id="labelInput" placeholder="Enter label" />
 
   <script>
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
-    const labelInput = document.getElementById('labelInput');
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
 
-    let states = [];
-    let transitions = [];
-    let selected = null;
-    let dragging = false;
-    let startTransition = null;
+    // High-DPI canvas fix
+    function resizeCanvas() {
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = window.innerWidth * dpr;
+      canvas.height = window.innerHeight * dpr;
+      canvas.style.width = window.innerWidth + 'px';
+      canvas.style.height = window.innerHeight + 'px';
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      draw();
+    }
+
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+
+    const states = [];
+    const transitions = [];
+
+    let dragging = null;
+    let selectedState = null;
 
     canvas.addEventListener('dblclick', (e) => {
       const x = e.offsetX;
       const y = e.offsetY;
       const label = prompt('Enter state label:');
       if (label) {
-        states.push({ x, y, label });
+        const radius = getTextRadius(label);
+        states.push({ x, y, label, radius });
         draw();
       }
     });
 
     canvas.addEventListener('mousedown', (e) => {
-      const { offsetX: x, offsetY: y } = e;
-      selected = getStateAt(x, y);
-      if (selected) {
-        dragging = true;
+      const x = e.offsetX;
+      const y = e.offsetY;
+      const state = getStateAt(x, y);
+      if (state) {
+        dragging = state;
       } else {
-        startTransition = getStateAt(x, y);
+        selectedState = getStateAt(x, y);
       }
     });
 
     canvas.addEventListener('mousemove', (e) => {
-      if (dragging && selected) {
-        selected.x = e.offsetX;
-        selected.y = e.offsetY;
+      if (dragging) {
+        dragging.x = e.offsetX;
+        dragging.y = e.offsetY;
         draw();
       }
     });
 
     canvas.addEventListener('mouseup', (e) => {
       if (dragging) {
-        dragging = false;
-        selected = null;
-      } else if (startTransition) {
-        const end = getStateAt(e.offsetX, e.offsetY);
-        if (end && end !== startTransition) {
-          const label = prompt('Enter transition label:');
-          transitions.push({ from: startTransition, to: end, label });
+        dragging = null;
+        return;
+      }
+
+      const x = e.offsetX;
+      const y = e.offsetY;
+      const secondState = getStateAt(x, y);
+
+      if (selectedState && secondState && selectedState !== secondState) {
+        const label = prompt('Enter transition label:');
+        if (label) {
+          transitions.push({ from: selectedState, to: secondState, label });
           draw();
         }
-        startTransition = null;
       }
+      selectedState = null;
     });
 
     function getStateAt(x, y) {
-      return states.find(s => Math.hypot(s.x - x, s.y - y) < 30);
+      return states.find(s => Math.hypot(s.x - x, s.y - y) < s.radius + 5);
+    }
+
+    function getTextRadius(text) {
+      ctx.font = '16px sans-serif';
+      const padding = 20;
+      const textWidth = ctx.measureText(text).width;
+      return Math.max(30, textWidth / 2 + padding);
     }
 
     function drawArrow(from, to, label) {
       const dx = to.x - from.x;
       const dy = to.y - from.y;
       const angle = Math.atan2(dy, dx);
-      const startX = from.x + 30 * Math.cos(angle);
-      const startY = from.y + 30 * Math.sin(angle);
-      const endX = to.x - 30 * Math.cos(angle);
-      const endY = to.y - 30 * Math.sin(angle);
+
+      const fromX = from.x + from.radius * Math.cos(angle);
+      const fromY = from.y + from.radius * Math.sin(angle);
+      const toX = to.x - to.radius * Math.cos(angle);
+      const toY = to.y - to.radius * Math.sin(angle);
 
       ctx.beginPath();
-      ctx.moveTo(startX, startY);
-      ctx.lineTo(endX, endY);
+      ctx.moveTo(fromX, fromY);
+      ctx.lineTo(toX, toY);
       ctx.stroke();
 
       // Arrowhead
-      const headlen = 10;
+      const headLength = 10;
       ctx.beginPath();
-      ctx.moveTo(endX, endY);
-      ctx.lineTo(endX - headlen * Math.cos(angle - Math.PI / 6), endY - headlen * Math.sin(angle - Math.PI / 6));
-      ctx.lineTo(endX - headlen * Math.cos(angle + Math.PI / 6), endY - headlen * Math.sin(angle + Math.PI / 6));
+      ctx.moveTo(toX, toY);
+      ctx.lineTo(
+        toX - headLength * Math.cos(angle - Math.PI / 6),
+        toY - headLength * Math.sin(angle - Math.PI / 6)
+      );
+      ctx.lineTo(
+        toX - headLength * Math.cos(angle + Math.PI / 6),
+        toY - headLength * Math.sin(angle + Math.PI / 6)
+      );
       ctx.closePath();
       ctx.fill();
 
       // Label
-      const labelX = (startX + endX) / 2;
-      const labelY = (startY + endY) / 2;
-      ctx.fillStyle = 'black';
-      ctx.fillText(label, labelX, labelY - 5);
+      const midX = (fromX + toX) / 2;
+      const midY = (fromY + toY) / 2;
+      ctx.fillText(label, midX, midY - 5);
     }
 
     function draw() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+      ctx.font = '16px sans-serif';
+      ctx.fillStyle = 'black';
+      ctx.strokeStyle = 'black';
+
       transitions.forEach(t => drawArrow(t.from, t.to, t.label));
 
       states.forEach(s => {
         ctx.beginPath();
-        ctx.arc(s.x, s.y, 30, 0, Math.PI * 2);
+        ctx.arc(s.x, s.y, s.radius, 0, Math.PI * 2);
         ctx.fillStyle = '#fff';
         ctx.fill();
-        ctx.strokeStyle = '#333';
+        ctx.strokeStyle = '#000';
         ctx.stroke();
         ctx.fillStyle = '#000';
         ctx.textAlign = 'center';
